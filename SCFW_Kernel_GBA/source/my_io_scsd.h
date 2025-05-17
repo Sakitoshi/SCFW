@@ -45,4 +45,7 @@
 // export interface
 extern const DISC_INTERFACE _my_io_scsd ;
 
+// Wait routine
+void wait_ms(unsigned ms);
+
 #endif	// define IO_SCSD_H

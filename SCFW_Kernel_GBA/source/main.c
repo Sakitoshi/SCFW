@@ -130,8 +130,11 @@ bool filter_selectable(struct dirent *dirent) {
 }
 
 #define GBA_ROM ((vu32*) 0x08000000)
+#define GBA_ROM2 ((vu32*) 0x0A000000)
+#define GBA_ROM3 ((vu32*) 0x0C000000)
 #define GBA_BUS ((vu16*) 0x08000000)
 #define GBA_SRAM ((vu8*) 0x0e000000)
+#define REG_WAITCNT (*(vu16*) 0x04000204)
 
 #define SC_FLASH_MAGIC_ADDR_1 (*(vu16*) 0x08000b92)
 #define SC_FLASH_MAGIC_ADDR_2 (*(vu16*) 0x0800046c)
@@ -236,20 +239,66 @@ void selectFile(char *path) {
 
 		u32 total_bytes = 0;
 		u32 bytes = 0;
+		REG_WAITCNT = 0x300;
 		iprintf("Loading ROM:\n\n");
 		do {
 			bytes = fread(filebuf, 1, sizeof filebuf, rom);
 			sc_mode(SC_RAM_RW);
 			for (u32 i = 0; i < bytes; i += 4) {
-				GBA_ROM[(i + total_bytes) >> 2] = *(vu32*) &filebuf[i];
-				if (GBA_ROM[(i + total_bytes) >> 2] != *(vu32*) &filebuf[i]) {
-					iprintf("\x1b[1A\x1b[KSDRAM write failed at\n0x%x\n\n", i + total_bytes);
-				}
+				GBA_ROM3[(i + total_bytes) >> 2] = *(vu32*) &filebuf[i];
+				//iprintf("\x1b[1A\x1b[Kbytes=%d, %d   \n", bytes, i);
+				//wait_ms(16);
+				//u32 count = 1;
+				//while ((GBA_ROM3[(i + total_bytes) >> 2] != *(vu32*) &filebuf[i]) && (count < 101)) {
+				//	wait_ms(count);
+				//	iprintf("\x1b[1A\x1b[KSDRAM write failed at\n0x%x Retrying... %d\n\n", i + total_bytes, count);
+				//	GBA_ROM3[(i + total_bytes) >> 2] = *(vu32*) &filebuf[i];
+				//	count++;
+				//	}
 			}
 			sc_mode(SC_MEDIA);
 			total_bytes += bytes;
 			iprintf("\x1b[1A\x1b[K0x%x/0x%x\n", total_bytes, romsize);
+			//wait_ms(48);
 		} while (bytes);
+		//fclose(rom);
+
+		// Wait 30 seconds and verify what was written
+		int waitTime = 0;
+		while (waitTime < 31) {
+			iprintf("\x1b[1A\x1b[KWaiting for 30 seconds... %d\n", waitTime);
+			wait_ms(166);
+			waitTime++;
+		}
+		//rom = fopen(path, "rb");
+		fseek(rom, 0, SEEK_SET);
+		u32 failCount = 0;
+		total_bytes = 0;
+		bytes = 0;
+		iprintf("Verifying ROM:\n\n");
+		do {
+			bytes = fread(filebuf, 1, sizeof filebuf, rom);
+			sc_mode(SC_RAM_RO);
+			for (u32 i = 0; i < bytes; i += 4) {
+				if (GBA_ROM3[(i + total_bytes) >> 2] != *(vu32*) &filebuf[i]) {
+					iprintf("\x1b[1A\x1b[KSDRAM read failed at\n0x%x\n\n", i + total_bytes);
+					failCount++;
+					//iprintf("\x1b[1A\x1b[Kbytes=%d, %d   \n", bytes, i);
+					wait_ms(16);
+				}
+			}
+		sc_mode(SC_MEDIA);
+		total_bytes += bytes;
+		iprintf("\x1b[1A\x1b[K0x%x/0x%x\n", total_bytes, romsize);
+		//wait_ms(166);
+		} while (bytes);
+		iprintf("\x1b[1A\x1b[KFailed to read %d bytes\nin total\n\n", failCount);
+		waitTime = 10;
+		while (waitTime > -1) {
+			iprintf("\x1b[1A\x1b[KContinuing in %d seconds...\n", waitTime);
+			wait_ms(166);
+			waitTime--;
+		}
 		fclose(rom);
 
 		if (settings.autosave) {
@@ -290,6 +339,7 @@ void selectFile(char *path) {
 
 		sc_mode(SC_RAM_RO);
 		REG_IE = 0;
+		REG_WAITCNT = 0x4000;
 		if (settings.biosboot)
 			__asm volatile("swi 0x26");
 		else
@@ -424,7 +474,7 @@ void selectFile(char *path) {
 void change_settings(char *path) {
 	for (int cursor = 0;;) {
 		iprintf("\x1b[2J"
-		        "SCFW Kernel v0.4.1 GBA-mode\n\n");
+		        "SCFW Kernel v0.4.2r GBA-mode\n\n");
 		
 		iprintf("%cAutosave: %i\n", cursor == 0 ? '>' : ' ', settings.autosave);
 		iprintf("%cSRAM Patch: %i\n", cursor == 1 ? '>' : ' ', settings.sram_patch);
@@ -485,7 +535,7 @@ int main() {
 
 	consoleDemoInit();
 
-	iprintf("SCFW Kernel v0.4.1 GBA-mode\n\n");
+	iprintf("SCFW Kernel v0.4.2r GBA-mode\n\n");
 
 	_my_io_scsd.startup();
 	if (fatMountSimple("fat", &_my_io_scsd)) {

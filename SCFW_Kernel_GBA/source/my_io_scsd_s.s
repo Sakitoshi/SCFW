@@ -137,3 +137,13 @@ _SCSD_writeData_return:
 	ldmfd	r13!,{r4-r5}
 	bx      r14
 
+.global wait_ms
+wait_ms:
+  mov r1, $2096    // 2^24 cycles / 1000 / 8
+  mul r0, r1, r0
+1:
+  nop; nop
+  nop; nop
+  subs r0, $1
+  bne 1b
+  bx lr 
